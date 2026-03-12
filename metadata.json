@@ -1,0 +1,5 @@
+{
+  "name": "VoyageAI",
+  "description": "Generate personalized travel itineraries powered by AI. Get detailed daily plans, budget estimates, and hidden gems for any destination.",
+  "requestFramePermissions": []
+}
