@@ -32,8 +32,10 @@ export interface LocalSpot {
 }
 
 export interface LocalSpotsInputs {
-  city: string;
+  destination: string;
   focus: 'food' | 'culture' | 'nature';
+  budgetAmount: number;
+  currency: string;
 }
 
 export interface Hotel {
@@ -42,6 +44,11 @@ export interface Hotel {
   pricePerNight: string;
   distanceFromCenter: string;
   amenities: string[];
+  nearbyPointsOfInterest: {
+    name: string;
+    type: string;
+    description: string;
+  }[];
   bookingUrl: string;
   imageUrl?: string;
 }
@@ -61,8 +68,11 @@ export interface TravelSearchResponse {
 }
 
 export interface TravelSearchInputs {
+  origin?: string;
   destination: string;
   budget: string;
+  budgetAmount: number;
+  currency: string;
   minRating?: number;
   maxDistance?: string;
   amenities?: string[];

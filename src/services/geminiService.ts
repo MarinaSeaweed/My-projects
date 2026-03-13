@@ -5,8 +5,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function getLocalSpots(inputs: LocalSpotsInputs): Promise<LocalSpot[]> {
   const prompt = `
-    Identify 5 non-touristy, locally beloved spots in ${inputs.city} that offer authentic experiences. 
+    Identify 5 non-touristy, locally beloved spots in ${inputs.destination} that offer authentic experiences. 
     Focus on ${inputs.focus}. 
+    The traveler has a budget of ${inputs.budgetAmount} ${inputs.currency} for these activities.
     For each spot, explain why it is special and provide a tip for visiting (e.g., best time to go, what to order).
   `;
 
@@ -43,7 +44,7 @@ export async function getLocalSpots(inputs: LocalSpotsInputs): Promise<LocalSpot
   const spotsWithImages = await Promise.all(spots.map(async (spot, idx) => {
     if (idx >= 3) return spot;
     try {
-      const imageUrl = await generateDestinationImage(`${spot.name} in ${inputs.city}`);
+      const imageUrl = await generateDestinationImage(`${spot.name} in ${inputs.destination}`);
       return { ...spot, imageUrl };
     } catch (error) {
       console.error(`Failed to generate image for ${spot.name}:`, error);
@@ -60,20 +61,24 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
     : "";
   const ratingStr = inputs.minRating ? `Only include hotels with a minimum rating of ${inputs.minRating} stars.` : "";
   const distanceStr = inputs.maxDistance ? `Prefer hotels within ${inputs.maxDistance} of the city center.` : "";
+  const originStr = inputs.origin ? `Departure city: ${inputs.origin}.` : "Departure city: Not specified (search from all available departure points).";
 
   const prompt = `
-    Search for affordable flight options and highly-rated hotels in ${inputs.destination} for a ${inputs.budget} budget.
+    Search for affordable flight options and highly-rated hotels in ${inputs.destination} for a budget of ${inputs.budgetAmount} ${inputs.currency}.
+    ${originStr}
     Provide real-time data or highly accurate estimates based on current trends.
     
     Hotel Preferences:
-    - Budget: ${inputs.budget}
+    - Budget: ${inputs.budgetAmount} ${inputs.currency} (${inputs.budget} category)
     - ${ratingStr}
     - ${distanceStr}
     - ${amenitiesStr}
 
     For flights, include airline, departure/arrival times, price, and duration.
     For hotels, include name, rating, price per night, distance from center, and key amenities.
+    CRITICAL: For each hotel, provide a list of nearby points of interest including restaurants, tourist attractions, and public transportation options.
     Provide a direct booking URL for each (use common travel sites like Expedia, Booking.com, or Skyscanner).
+    All costs MUST be in ${inputs.currency}.
   `;
 
   const response = await ai.models.generateContent({
@@ -96,9 +101,21 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
                 pricePerNight: { type: Type.STRING },
                 distanceFromCenter: { type: Type.STRING },
                 amenities: { type: Type.ARRAY, items: { type: Type.STRING } },
+                nearbyPointsOfInterest: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      type: { type: Type.STRING, description: "e.g., Restaurant, Attraction, Transport" },
+                      description: { type: Type.STRING }
+                    },
+                    required: ["name", "type", "description"]
+                  }
+                },
                 bookingUrl: { type: Type.STRING },
               },
-              required: ["name", "rating", "pricePerNight", "distanceFromCenter", "amenities", "bookingUrl"],
+              required: ["name", "rating", "pricePerNight", "distanceFromCenter", "amenities", "nearbyPointsOfInterest", "bookingUrl"],
             },
           },
           flights: {

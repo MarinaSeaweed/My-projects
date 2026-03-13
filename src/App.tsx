@@ -58,15 +58,20 @@ export default function App() {
 
   // Local Spots State
   const [localInputs, setLocalInputs] = useState<LocalSpotsInputs>({
-    city: '',
-    focus: 'food'
+    destination: '',
+    focus: 'food',
+    budgetAmount: 500,
+    currency: 'USD'
   });
   const [localSpotsResult, setLocalSpotsResult] = useState<LocalSpot[] | null>(null);
 
   // Deals State
   const [dealsInputs, setDealsInputs] = useState<TravelSearchInputs>({
+    origin: '',
     destination: '',
     budget: 'Mid-range',
+    budgetAmount: 3000,
+    currency: 'USD',
     minRating: 4,
     maxDistance: '5km',
     amenities: []
@@ -587,7 +592,7 @@ export default function App() {
                     
                     <form onSubmit={handleLocalSpotsSubmit} className="space-y-5">
                       <div>
-                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">City</label>
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">City / Destination</label>
                         <div className="relative">
                           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
                           <input 
@@ -595,8 +600,8 @@ export default function App() {
                             required
                             placeholder="e.g. Lisbon, Portugal"
                             className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                            value={localInputs.city}
-                            onChange={e => setLocalInputs({...localInputs, city: e.target.value})}
+                            value={localInputs.destination}
+                            onChange={e => setLocalInputs({...localInputs, destination: e.target.value})}
                           />
                         </div>
                       </div>
@@ -628,6 +633,44 @@ export default function App() {
                             <Palmtree className="w-5 h-5" />
                             <span className="text-[10px] uppercase font-bold">Nature</span>
                           </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Budget & Currency</label>
+                        <div className="space-y-4">
+                          <div className="flex gap-4">
+                            <div className="relative flex-1">
+                              <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                              <select 
+                                className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all appearance-none"
+                                value={localInputs.currency}
+                                onChange={e => setLocalInputs({...localInputs, currency: e.target.value})}
+                              >
+                                <option value="USD">USD ($)</option>
+                                <option value="EUR">EUR (€)</option>
+                                <option value="GBP">GBP (£)</option>
+                                <option value="JPY">JPY (¥)</option>
+                                <option value="AUD">AUD (A$)</option>
+                                <option value="CAD">CAD (C$)</option>
+                                <option value="INR">INR (₹)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs font-medium text-stone-500">
+                              <span>Amount: {localInputs.budgetAmount.toLocaleString()} {localInputs.currency}</span>
+                            </div>
+                            <input 
+                              type="range"
+                              min="50"
+                              max="5000"
+                              step="50"
+                              className="w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                              value={localInputs.budgetAmount}
+                              onChange={e => setLocalInputs({...localInputs, budgetAmount: parseInt(e.target.value)})}
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -664,6 +707,20 @@ export default function App() {
                     
                     <form onSubmit={handleDealsSubmit} className="space-y-5">
                       <div>
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Origin (Optional for flights)</label>
+                        <div className="relative">
+                          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                          <input 
+                            type="text"
+                            placeholder="Departure city"
+                            className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                            value={dealsInputs.origin}
+                            onChange={e => setDealsInputs({...dealsInputs, origin: e.target.value})}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
                         <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Destination</label>
                         <div className="relative">
                           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -679,18 +736,51 @@ export default function App() {
                       </div>
 
                       <div>
-                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Budget Range</label>
-                        <div className="relative">
-                          <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                          <select 
-                            className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none appearance-none"
-                            value={dealsInputs.budget}
-                            onChange={e => setDealsInputs({...dealsInputs, budget: e.target.value})}
-                          >
-                            <option>Budget</option>
-                            <option>Mid-range</option>
-                            <option>Luxury</option>
-                          </select>
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Budget & Currency</label>
+                        <div className="space-y-4">
+                          <div className="flex gap-4">
+                            <div className="relative flex-1">
+                              <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                              <select 
+                                className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all appearance-none"
+                                value={dealsInputs.currency}
+                                onChange={e => setDealsInputs({...dealsInputs, currency: e.target.value})}
+                              >
+                                <option value="USD">USD ($)</option>
+                                <option value="EUR">EUR (€)</option>
+                                <option value="GBP">GBP (£)</option>
+                                <option value="JPY">JPY (¥)</option>
+                                <option value="AUD">AUD (A$)</option>
+                                <option value="CAD">CAD (C$)</option>
+                                <option value="INR">INR (₹)</option>
+                              </select>
+                            </div>
+                            <div className="relative flex-1">
+                              <select 
+                                className="w-full px-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all appearance-none"
+                                value={dealsInputs.budget}
+                                onChange={e => setDealsInputs({...dealsInputs, budget: e.target.value})}
+                              >
+                                <option>Budget</option>
+                                <option>Mid-range</option>
+                                <option>Luxury</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs font-medium text-stone-500">
+                              <span>Amount: {dealsInputs.budgetAmount.toLocaleString()} {dealsInputs.currency}</span>
+                            </div>
+                            <input 
+                              type="range"
+                              min="100"
+                              max="30000"
+                              step="100"
+                              className="w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                              value={dealsInputs.budgetAmount}
+                              onChange={e => setDealsInputs({...dealsInputs, budgetAmount: parseInt(e.target.value)})}
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -1141,11 +1231,33 @@ export default function App() {
                               <MapPin className="w-3 h-3" />
                               {hotel.distanceFromCenter} from center
                             </div>
-                            <div className="flex flex-wrap gap-2 mb-6">
+                            <div className="flex flex-wrap gap-2 mb-4">
                               {hotel.amenities.map((amenity, i) => (
                                 <span key={i} className="px-2 py-1 bg-stone-50 text-[10px] text-stone-500 rounded-md border border-stone-100">{amenity}</span>
                               ))}
                             </div>
+
+                            {/* Nearby Points of Interest */}
+                            <div className="mb-6 space-y-3">
+                              <h5 className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Nearby Points of Interest</h5>
+                              <div className="space-y-2">
+                                {hotel.nearbyPointsOfInterest.map((poi, pIdx) => (
+                                  <div key={pIdx} className="p-3 bg-stone-50 rounded-xl border border-stone-100 flex items-start gap-3">
+                                    <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
+                                      {poi.type.toLowerCase().includes('food') || poi.type.toLowerCase().includes('restaurant') ? <Utensils className="w-3 h-3 text-emerald-600" /> :
+                                       poi.type.toLowerCase().includes('transport') ? <Bus className="w-3 h-3 text-blue-600" /> :
+                                       <Sparkles className="w-3 h-3 text-amber-500" />}
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-bold text-stone-900">{poi.name}</div>
+                                      <div className="text-[9px] text-stone-400 uppercase font-bold">{poi.type}</div>
+                                      <p className="text-[10px] text-stone-600 leading-tight mt-0.5">{poi.description}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
                             <div className="mt-auto">
                               <a 
                                 href={hotel.bookingUrl}
