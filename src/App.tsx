@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plane, 
@@ -80,7 +80,27 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Progress bar logic
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return prev;
+          // Fast start, then slows down
+          const increment = Math.max(0.5, (90 - prev) * 0.1);
+          return Math.min(90, prev + increment);
+        });
+      }, 100);
+    } else {
+      setProgress(100);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const handleItinerarySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,9 +287,10 @@ export default function App() {
                 {activeTab === 'itinerary' ? (
                   <motion.div
                     key="itinerary-form"
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
                   >
                     <h2 className="text-2xl font-serif mb-6 flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-emerald-600" />
@@ -581,9 +602,10 @@ export default function App() {
                 ) : activeTab === 'secrets' ? (
                   <motion.div
                     key="secrets-form"
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
                   >
                     <h2 className="text-2xl font-serif mb-6 flex items-center gap-2">
                       <Gem className="w-5 h-5 text-amber-500" />
@@ -696,9 +718,10 @@ export default function App() {
                 ) : (
                   <motion.div
                     key="deals-form"
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
                   >
                     <h2 className="text-2xl font-serif mb-6 flex items-center gap-2">
                       <Tickets className="w-5 h-5 text-blue-500" />
@@ -871,6 +894,7 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
                   className="h-full flex flex-col items-center justify-center text-center p-12 bg-white/50 rounded-3xl border-2 border-dashed border-stone-200"
                 >
                   <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
@@ -896,6 +920,7 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
                   className="h-full flex flex-col items-center justify-center text-center p-12 space-y-6"
                 >
                   <div className="relative">
@@ -917,8 +942,13 @@ export default function App() {
                     <motion.div 
                       className="h-full bg-emerald-500"
                       initial={{ width: "0%" }}
-                      animate={{ width: "100%" }}
-                      transition={{ duration: 15, ease: "linear" }}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ 
+                        type: "spring", 
+                        stiffness: 50, 
+                        damping: 15,
+                        mass: 0.5
+                      }}
                     />
                   </div>
                 </motion.div>
@@ -941,8 +971,9 @@ export default function App() {
               {activeTab === 'itinerary' && itineraryResult && !loading && (
                 <motion.div 
                   key="itinerary-result"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 100, damping: 20 }}
                   className="space-y-8 pb-12"
                 >
                   {/* Destination Image */}
@@ -1087,8 +1118,9 @@ export default function App() {
               {activeTab === 'secrets' && localSpotsResult && !loading && (
                 <motion.div 
                   key="secrets-result"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 100, damping: 20 }}
                   className="grid grid-cols-1 gap-6 pb-12"
                 >
                   {localSpotsResult.map((spot, idx) => (
@@ -1147,8 +1179,9 @@ export default function App() {
               {activeTab === 'deals' && dealsResult && !loading && (
                 <motion.div 
                   key="deals-result"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: "spring", stiffness: 100, damping: 20 }}
                   className="space-y-12 pb-12"
                 >
                   {/* Flights Section */}
