@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plane, 
@@ -23,10 +23,28 @@ import {
   Tickets,
   ArrowRight,
   Star,
-  ExternalLink
+  ExternalLink,
+  Share2,
+  Mail,
+  FileSpreadsheet,
+  CalendarDays,
+  FileDown,
+  Copy,
+  Check,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { generateItinerary, getLocalSpots, generateDestinationImage, searchTravelDeals } from './services/geminiService';
 import { ItineraryResponse, TravelInputs, LocalSpot, LocalSpotsInputs, TravelSearchResponse, TravelSearchInputs } from './types';
+import { 
+  initAuth, 
+  googleSignIn, 
+  logout, 
+  addItineraryToCalendar, 
+  addItineraryToSheets, 
+  encodeItinerary, 
+  decodeItinerary
+} from './services/googleWorkspaceService';
 
 type Tab = 'itinerary' | 'secrets' | 'deals';
 
@@ -80,6 +98,124 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // Authentication & Sharing state
+  const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [sharedLink, setSharedLink] = useState('');
+  const [shareEmailText, setShareEmailText] = useState('');
+  const [calendarStatus, setCalendarStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [sheetsStatus, setSheetsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [sheetsUrl, setSheetsUrl] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // 1. Initialise auth & check for shared link
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (currentUser, currentToken) => {
+        setUser(currentUser);
+        setToken(currentToken);
+      },
+      () => {
+        setUser(null);
+        setToken(null);
+      }
+    );
+
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get('sharedItinerary');
+    if (shared) {
+      const decoded = decodeItinerary(shared);
+      if (decoded) {
+        setItineraryResult(decoded.itinerary);
+        setInputs(prev => ({
+          ...prev,
+          destination: decoded.destination,
+          startDate: decoded.startDate,
+        }));
+        setActiveTab('itinerary');
+      }
+    }
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Automatically update sharedLink and shareEmailText when itinerary changes
+  useEffect(() => {
+    if (itineraryResult) {
+      const hash = encodeItinerary(itineraryResult, inputs.destination, inputs.startDate);
+      const link = `${window.location.origin}${window.location.pathname}?sharedItinerary=${hash}`;
+      setSharedLink(link);
+      setShareEmailText(`mailto:?subject=My VoyageAI Trip Itinerary to ${inputs.destination}&body=Check out my custom itinerary for a trip to ${inputs.destination} generated on VoyageAI! %0D%0A%0D%0AView Itinerary: ${encodeURIComponent(link)}`);
+    } else {
+      setSharedLink('');
+      setShareEmailText('');
+    }
+    setCalendarStatus('idle');
+    setSheetsStatus('idle');
+    setSheetsUrl('');
+  }, [itineraryResult, inputs.destination, inputs.startDate]);
+
+  const handleSignIn = async () => {
+    setIsAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setUser(res.user);
+        setToken(res.accessToken);
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to sign in with Google');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await logout();
+    setUser(null);
+    setToken(null);
+  };
+
+  const handleCopyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(sharedLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const handleAddToCalendar = async () => {
+    if (!itineraryResult) return;
+    setCalendarStatus('loading');
+    const result = await addItineraryToCalendar(itineraryResult.itinerary, inputs.destination, inputs.startDate);
+    if (result.success) {
+      setCalendarStatus('success');
+    } else {
+      setCalendarStatus('error');
+    }
+  };
+
+  const handleAddToSheets = async () => {
+    if (!itineraryResult) return;
+    setSheetsStatus('loading');
+    const result = await addItineraryToSheets(itineraryResult.itinerary, inputs.destination, inputs.startDate);
+    if (result.success && result.spreadsheetUrl) {
+      setSheetsUrl(result.spreadsheetUrl);
+      setSheetsStatus('success');
+    } else {
+      setSheetsStatus('error');
+    }
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
 
   const handleItinerarySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,7 +344,39 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f5f2ed] text-[#1a1a1a] font-sans selection:bg-emerald-100">
       {/* Hero Section */}
-      <header className="relative h-[40vh] flex items-center justify-center overflow-hidden bg-stone-900">
+      <header className="relative h-[40vh] flex items-center justify-center overflow-hidden bg-stone-900 print:hidden">
+        {/* Google Authentication Status Float */}
+        <div className="absolute top-4 right-4 z-30 no-print">
+          {user ? (
+            <div className="flex items-center gap-3 bg-stone-900/80 backdrop-blur-md px-3.5 py-2 rounded-full border border-stone-800 text-white shadow-xl">
+              {user.photoURL && (
+                <img src={user.photoURL} alt={user.displayName || ""} className="w-5 h-5 rounded-full object-cover border border-white/20" referrerPolicy="no-referrer" />
+              )}
+              <span className="text-[11px] font-medium hidden sm:inline">{user.displayName}</span>
+              <button 
+                onClick={handleSignOut} 
+                className="text-stone-400 hover:text-red-400 p-0.5 transition-colors cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={handleSignIn}
+              disabled={isAuthLoading}
+              className="flex items-center gap-2 bg-white hover:bg-stone-50 text-stone-900 font-semibold text-xs px-4 py-2.5 rounded-full shadow-lg border border-stone-200 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+            >
+              {isAuthLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <LogIn className="w-3.5 h-3.5 text-red-500" />
+              )}
+              <span>Sync with Google</span>
+            </button>
+          )}
+        </div>
+
         <img 
           src="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&q=80&w=1920" 
           alt="Travel background" 
@@ -231,9 +399,9 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-12 -mt-20 relative z-20">
+      <main className="max-w-6xl mx-auto px-4 py-12 -mt-20 relative z-20 print:py-0 print:mt-0 print:max-w-full">
         {/* Tab Switcher */}
-        <div className="flex justify-center mb-8">
+        <div className="flex justify-center mb-8 no-print">
           <div className="bg-white/80 backdrop-blur-md p-1 rounded-2xl shadow-lg border border-white/20 flex gap-1">
             <button 
               onClick={() => setActiveTab('itinerary')}
@@ -261,7 +429,7 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-4"
+            className="lg:col-span-4 no-print"
           >
             <div className="bg-white rounded-3xl shadow-xl shadow-stone-200/50 p-8 border border-stone-100 sticky top-8">
               <AnimatePresence mode="wait">
@@ -848,7 +1016,7 @@ export default function App() {
           </motion.div>
 
           {/* Result Display Column */}
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 print-full-width">
             <AnimatePresence mode="wait">
               {/* Initial State */}
               {((activeTab === 'itinerary' && !itineraryResult) || (activeTab === 'secrets' && !localSpotsResult) || (activeTab === 'deals' && !dealsResult)) && !loading && !error && (
@@ -1063,6 +1231,161 @@ export default function App() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+
+                  {/* Share & Integration Center */}
+                  <div className="bg-white rounded-3xl p-8 shadow-xl shadow-stone-200/50 border border-stone-100 space-y-6 no-print">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-100 pb-6">
+                      <div>
+                        <h4 className="text-lg font-serif font-medium text-stone-900">Share & Export Trip</h4>
+                        <p className="text-sm text-stone-500">Keep your itinerary handy by sharing or syncing it with Google Workspace APIs.</p>
+                      </div>
+                      
+                      {/* Sharing Link with Email button */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={handleCopyToClipboard}
+                          className="flex items-center gap-2 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-semibold px-4 py-2.5 rounded-xl border border-stone-200 transition-all active:scale-95 cursor-pointer"
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="w-4 h-4 text-emerald-500 animate-pulse" />
+                              <span>Copied Link!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4 text-stone-500" />
+                              <span>Copy Share Link</span>
+                            </>
+                          )}
+                        </button>
+                        
+                        <a
+                          href={shareEmailText}
+                          className="flex items-center gap-2 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-semibold px-4 py-2.5 rounded-xl border border-stone-200 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <Mail className="w-4 h-4 text-stone-500" />
+                          <span>Share via Email</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Google Calendar export card */}
+                      <div className="bg-stone-50/50 hover:bg-stone-50 rounded-2xl p-5 border border-stone-100 transition-all flex flex-col justify-between">
+                        <div>
+                          <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4">
+                            <CalendarDays className="w-5 h-5" />
+                          </div>
+                          <h5 className="font-semibold text-stone-900 text-sm mb-1">Add to Google Calendar</h5>
+                          <p className="text-xs text-stone-500 leading-relaxed mb-4">Add every item on your itinerary directly into your Google Calendar as structured events.</p>
+                        </div>
+                        <div>
+                          {user ? (
+                            <button
+                              onClick={handleAddToCalendar}
+                              disabled={calendarStatus === 'loading'}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs py-2.5 px-4 rounded-xl shadow-md disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              {calendarStatus === 'loading' ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Syncing...</span>
+                                </>
+                              ) : calendarStatus === 'success' ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Added to Calendar!</span>
+                                </>
+                              ) : calendarStatus === 'error' ? (
+                                <span>Failed. Try again</span>
+                              ) : (
+                                <span>Add events</span>
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={handleSignIn}
+                              className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+                            >
+                              Sign in to Sync
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Google Sheets export card */}
+                      <div className="bg-stone-50/50 hover:bg-stone-50 rounded-2xl p-5 border border-stone-100 transition-all flex flex-col justify-between">
+                        <div>
+                          <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-4">
+                            <FileSpreadsheet className="w-5 h-5" />
+                          </div>
+                          <h5 className="font-semibold text-stone-900 text-sm mb-1">Export to Google Sheets</h5>
+                          <p className="text-xs text-stone-500 leading-relaxed mb-4">Create a clean, well-formatted spreadsheet containing dates, times, costs, and details.</p>
+                        </div>
+                        <div>
+                          {user ? (
+                            <>
+                              {sheetsStatus === 'success' && sheetsUrl ? (
+                                <a
+                                  href={sheetsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span>Open Spreadsheet</span>
+                                </a>
+                              ) : (
+                                <button
+                                  onClick={handleAddToSheets}
+                                  disabled={sheetsStatus === 'loading'}
+                                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs py-2.5 px-4 rounded-xl shadow-md disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                  {sheetsStatus === 'loading' ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      <span>Creating...</span>
+                                    </>
+                                  ) : sheetsStatus === 'error' ? (
+                                    <span>Failed. Try again</span>
+                                  ) : (
+                                    <span>Export to Sheet</span>
+                                  )}
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <button
+                              onClick={handleSignIn}
+                              className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+                            >
+                              Sign in to Export
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Export to PDF / Print card */}
+                      <div className="bg-stone-50/50 hover:bg-stone-50 rounded-2xl p-5 border border-stone-100 transition-all flex flex-col justify-between">
+                        <div>
+                          <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-4">
+                            <FileDown className="w-5 h-5" />
+                          </div>
+                          <h5 className="font-semibold text-stone-900 text-sm mb-1">Export as PDF</h5>
+                          <p className="text-xs text-stone-500 leading-relaxed mb-4">Download a beautifully formatted, printer-ready PDF version of your itinerary.</p>
+                        </div>
+                        <div>
+                          <button
+                            onClick={handleExportPDF}
+                            className="w-full bg-stone-900 hover:bg-stone-850 text-white font-medium text-xs py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <FileDown className="w-3.5 h-3.5" />
+                            <span>Download PDF</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </motion.div>

@@ -1,5 +1,6 @@
 {
   "name": "VoyageAI",
   "description": "Generate personalized travel itineraries powered by AI. Get detailed daily plans, budget estimates, and hidden gems for any destination.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

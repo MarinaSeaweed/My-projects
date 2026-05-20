@@ -6,3 +6,44 @@
   --font-serif: "Playfair Display", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
+
+@media print {
+  body {
+    background-color: white !important;
+    color: #1c1917 !important; /* stone-900 */
+    font-size: 12pt !important;
+  }
+  /* Hide interactive areas, forms, buttons, image banners if desire, and helper alerts */
+  .no-print,
+  button,
+  form,
+  .print-hidden {
+    display: none !important;
+  }
+  .print-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+    position: static !important;
+    grid-column: span 12 / span 12 !important;
+  }
+  .print-clean-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+  /* Ensure page breaks look gorgeous and table headers stay with table rows */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+}
