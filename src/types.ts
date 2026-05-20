@@ -69,7 +69,7 @@ export interface TravelSearchResponse {
 
 export interface TravelSearchInputs {
   origin?: string;
-  destination: string;
+  destinations: string[];
   budget: string;
   budgetAmount: number;
   currency: string;
@@ -79,8 +79,7 @@ export interface TravelSearchInputs {
 }
 
 export interface TravelInputs {
-  origin: string;
-  destinations: string[];
+  destination: string;
   startDate: string;
   endDate: string;
   days: number;

@@ -56,6 +56,7 @@ export async function getLocalSpots(inputs: LocalSpotsInputs): Promise<LocalSpot
 }
 
 export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<TravelSearchResponse> {
+  const destinationsStr = inputs.destinations.join(", ");
   const amenitiesStr = inputs.amenities && inputs.amenities.length > 0 
     ? `Prefer hotels with these amenities: ${inputs.amenities.join(", ")}.` 
     : "";
@@ -64,7 +65,7 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
   const originStr = inputs.origin ? `Departure city: ${inputs.origin}.` : "Departure city: Not specified (search from all available departure points).";
 
   const prompt = `
-    Search for affordable flight options and highly-rated hotels in ${inputs.destination} for a budget of ${inputs.budgetAmount} ${inputs.currency}.
+    Search for affordable flight options and highly-rated hotels for a trip to ${destinationsStr} for a budget of ${inputs.budgetAmount} ${inputs.currency}.
     ${originStr}
     Provide real-time data or highly accurate estimates based on current trends.
     
@@ -149,7 +150,7 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
   const hotelsWithImages = await Promise.all(data.hotels.map(async (hotel, idx) => {
     if (idx >= 2) return hotel;
     try {
-      const imageUrl = await generateDestinationImage(`${hotel.name} hotel in ${inputs.destination}`);
+      const imageUrl = await generateDestinationImage(`${hotel.name} hotel in ${inputs.destinations[0] || 'destination'}`);
       return { ...hotel, imageUrl };
     } catch (error) {
       return hotel;
@@ -160,13 +161,13 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
 }
 
 export async function generateItinerary(inputs: TravelInputs): Promise<ItineraryResponse> {
-  const destinationsStr = inputs.destinations.join(", ");
+  const destinationsStr = inputs.destination;
   const surpriseMePrompt = inputs.surpriseMe 
     ? "Include at least one 'Surprise' activity that is unique, off-the-beaten-path, and aligns with the traveler's profile but wasn't explicitly requested. Mark it clearly in the activity description." 
     : "";
 
   const travelerDetails = `
-    Origin: ${inputs.origin}
+    Destination: ${inputs.destination}
     Total Travelers: ${inputs.people}
     Adults: ${inputs.adults}
     Children: ${inputs.children}
@@ -186,7 +187,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
   const currentDate = "2026-03-11"; // Based on provided runtime context
 
   const prompt = `
-    Act as an expert travel agent. Create a ${inputs.days}-day, ${inputs.nights}-night multi-destination itinerary for ${destinationsStr} for the following group:
+    Act as an expert travel agent. Create a ${inputs.days}-day, ${inputs.nights}-night itinerary for ${destinationsStr} for a traveler/group already at or visiting this destination.
     ${travelerDetails}
     
     Trip Duration:
@@ -203,8 +204,8 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     Current Date: ${currentDate}
     
     CRITICAL: 
-    1. Use the googleSearch tool to fetch the real-time weather forecast for the destinations (${destinationsStr}) for the travel period (${inputs.startDate} to ${inputs.endDate}).
-    2. Suggest specific transportation options from the origin (${inputs.origin}) to the destinations and between them.
+    1. Use the googleSearch tool to fetch the real-time weather forecast for ${destinationsStr} for the travel period (${inputs.startDate} to ${inputs.endDate}).
+    2. Suggest specific transportation options or getting-around methods (public transit, taxi, walking) within ${destinationsStr}.
     3. All estimated costs MUST be displayed in ${inputs.currency}.
     
     Based on the weather forecast:
@@ -214,7 +215,6 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     4. Include a brief 'weatherSummary' in the logistics section.
 
     Provide a detailed daily schedule and a summary of logistics. 
-    Crucially, include travel time and logistics between the destinations in the itinerary.
     The estimated costs should be in ${inputs.currency}.
   `;
 
