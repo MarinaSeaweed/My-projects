@@ -4,15 +4,31 @@ import { ItineraryResponse, TravelInputs, LocalSpot, LocalSpotsInputs, TravelSea
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function getLocalSpots(inputs: LocalSpotsInputs): Promise<LocalSpot[]> {
+  let locationGuidance = "";
+  if (inputs.locationMode === 'specific') {
+    const startPoint = inputs.specificAddress || (inputs.specificCoordinates ? `${inputs.specificCoordinates.lat}, ${inputs.specificCoordinates.lng}` : '');
+    const minutes = inputs.maxTravelMinutes || 15;
+    if (startPoint) {
+      locationGuidance = `
+      CRITICAL LOCATION CONSTRAINT (GOOGLE MAPS PRECISION):
+      The user is specifically starting from: "${startPoint}".
+      You MUST only identify spots located extremely near this address, reachable within a maximum of ${minutes} minutes of travel (walking, driving, or public transit).
+      Under no circumstances suggest spots that take longer than ${minutes} minutes of journey.
+      Include a short travel description and estimate (e.g. "9 min walk" or "14 min drive") as the 'travelTimeEstimate' field.
+      `;
+    }
+  }
+
   const prompt = `
     Identify 5 non-touristy, locally beloved spots in ${inputs.destination} that offer authentic experiences. 
     Focus on ${inputs.focus}. 
     The traveler has a budget of ${inputs.budgetAmount} ${inputs.currency} for these activities.
     For each spot, explain why it is special and provide a tip for visiting (e.g., best time to go, what to order).
+    ${locationGuidance}
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.5-flash",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -27,6 +43,7 @@ export async function getLocalSpots(inputs: LocalSpotsInputs): Promise<LocalSpot
             whySpecial: { type: Type.STRING },
             tip: { type: Type.STRING },
             location: { type: Type.STRING },
+            travelTimeEstimate: { type: Type.STRING, description: "Estimated travel time from the starting location, e.g. '8 min walk' or '12 min drive'" },
           },
           required: ["name", "category", "whySpecial", "tip", "location"],
         },
@@ -63,10 +80,16 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
   const ratingStr = inputs.minRating ? `Only include hotels with a minimum rating of ${inputs.minRating} stars.` : "";
   const distanceStr = inputs.maxDistance ? `Prefer hotels within ${inputs.maxDistance} of the city center.` : "";
   const originStr = inputs.origin ? `Departure city: ${inputs.origin}.` : "Departure city: Not specified (search from all available departure points).";
+  const dateStr = inputs.startDate && inputs.endDate 
+    ? `Travel dates: From ${inputs.startDate} to ${inputs.endDate}.` 
+    : "";
+  const travelersStr = `Travelers count: ${inputs.adults || 1} adults${inputs.children ? `, ${inputs.children} children (Ages: ${inputs.childrenAges?.join(", ") || "Not specified"})` : ""}.`;
 
   const prompt = `
     Search for affordable flight options and highly-rated hotels for a trip to ${destinationsStr} for a budget of ${inputs.budgetAmount} ${inputs.currency}.
     ${originStr}
+    ${dateStr}
+    ${travelersStr}
     Provide real-time data or highly accurate estimates based on current trends.
     
     Hotel Preferences:
@@ -74,7 +97,12 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
     - ${ratingStr}
     - ${distanceStr}
     - ${amenitiesStr}
-
+    
+    Flight Preferences:
+    - Flight Type: ${inputs.flightType === 'oneway' ? 'One-way' : 'Round-trip'}.
+    - Departure/Arrival or stay details align with the travel dates: ${dateStr || "flexible"}.
+    - Number of passengers: ${travelersStr}.
+    
     For flights, include airline, departure/arrival times, price, and duration.
     For hotels, include name, rating, price per night, distance from center, and key amenities.
     CRITICAL: For each hotel, provide a list of nearby points of interest including restaurants, tourist attractions, and public transportation options.
@@ -83,7 +111,7 @@ export async function searchTravelDeals(inputs: TravelSearchInputs): Promise<Tra
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.5-flash",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -166,6 +194,33 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     ? "Include at least one 'Surprise' activity that is unique, off-the-beaten-path, and aligns with the traveler's profile but wasn't explicitly requested. Mark it clearly in the activity description." 
     : "";
 
+  let locationGuidance = "";
+  if (inputs.locationMode === 'specific') {
+    const startPoint = inputs.specificAddress || (inputs.specificCoordinates ? `${inputs.specificCoordinates.lat}, ${inputs.specificCoordinates.lng}` : '');
+    const minutes = inputs.maxTravelMinutes || 15;
+    if (startPoint) {
+      locationGuidance = `
+      CRITICAL LOCALITY RESTRAINT:
+      The traveler wants an itinerary centered tightly around a specific starting location: "${startPoint}".
+      All recommended spots, restaurants, and attractions in the daily itinerary MUST be close to this start address and reachable within a maximum of ${minutes} minutes of travel (walking, public transit, or cycling/driving) from "${startPoint}".
+      For each itinerary activity, provide estimated travel distance or time (e.g., "10 min walk" or "14 min taxi") in the 'travelTimeEstimate' field.
+      Do not include activities that are further than ${minutes} minutes of travel away.
+      `;
+    }
+  }
+
+  let dailyTimingGuidance = "";
+  if (inputs.dailyStartTime || inputs.dailyEndTime) {
+    const startTimeStr = inputs.dailyStartTime || "morning";
+    const endTimeStr = inputs.dailyEndTime || "night";
+    dailyTimingGuidance = `
+    DAILY TIMING CONSTRAINT:
+    The traveler wants their daily itinerary schedule to start NO EARLIER than ${startTimeStr} and wrap up/conclude NO LATER than ${endTimeStr}.
+    Please ensure all recommended daily activities (e.g. morning, afternoon, evening slots) operate strictly within this window. 
+    Do not schedule any activities (such as early breakfasts or late-night events) outside of this timeframe.
+    `;
+  }
+
   const travelerDetails = `
     Destination: ${inputs.destination}
     Total Travelers: ${inputs.people}
@@ -200,6 +255,8 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     Tempo: ${inputs.tempo}
     Preferences: ${inputs.preferences}
     ${surpriseMePrompt}
+    ${locationGuidance}
+    ${dailyTimingGuidance}
 
     Current Date: ${currentDate}
     
@@ -219,7 +276,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.5-flash",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -241,6 +298,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
                 hiddenGemNote: { type: Type.STRING },
                 weatherNote: { type: Type.STRING, description: "Attire advice or weather-specific tip" },
                 indoorAlternative: { type: Type.STRING, description: "Alternative activity if weather is bad" },
+                travelTimeEstimate: { type: Type.STRING, description: "Estimated walking or transit time from user starting position, e.g. '10 min walk' or '15 min drive'" },
               },
               required: ["day", "time", "activity", "location", "estimatedCost", "hiddenGemNote"],
             },
@@ -269,27 +327,42 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
 }
 
 export async function generateDestinationImage(destination: string): Promise<string> {
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [
-        {
-          text: `A beautiful, high-quality travel photography style image of ${destination}. Cinematic lighting, vibrant colors, representative of the destination's atmosphere.`,
-        },
-      ],
-    },
-    config: {
-      imageConfig: {
-        aspectRatio: "16:9",
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: `A beautiful, high-quality travel photography style image of ${destination}. Cinematic lighting, vibrant colors, representative of the destination's atmosphere.`,
+          },
+        ],
       },
-    },
-  });
+      config: {
+        imageConfig: {
+          aspectRatio: "16:9",
+        },
+      },
+    });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
+  } catch (error) {
+    console.warn(`Failed to generate AI image for ${destination}, using high-quality Unsplash travel fallback.`, error);
   }
 
-  throw new Error("Failed to generate image");
+  // Generate a beautiful, high-quality Unsplash image based on standard categories
+  const travelFallbacks = [
+    "https://images.unsplash.com/photo-1527631746610-bca00a040d60?auto=format&fit=crop&q=80&w=800", // travel wanderlust
+    "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&q=80&w=800", // passport / map
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=800", // beach sunset
+    "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&q=80&w=800", // scenic lake
+    "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&q=80&w=800"  // scenic hills
+  ];
+  
+  // Use a simple hash code of the destination name to pick a stable image link
+  const hash = destination.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return travelFallbacks[hash % travelFallbacks.length];
 }

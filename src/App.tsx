@@ -32,7 +32,11 @@ import {
   Copy,
   Check,
   LogOut,
-  LogIn
+  LogIn,
+  Compass,
+  Navigation,
+  Locate,
+  Repeat
 } from 'lucide-react';
 import { generateItinerary, getLocalSpots, generateDestinationImage, searchTravelDeals } from './services/geminiService';
 import { ItineraryResponse, TravelInputs, LocalSpot, LocalSpotsInputs, TravelSearchResponse, TravelSearchInputs } from './types';
@@ -45,6 +49,14 @@ import {
   encodeItinerary, 
   decodeItinerary
 } from './services/googleWorkspaceService';
+import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
+
+const GOOGLE_MAPS_KEY =
+  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
+  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
+  '';
+const hasValidMapsKey = Boolean(GOOGLE_MAPS_KEY) && GOOGLE_MAPS_KEY !== 'YOUR_API_KEY';
 
 type Tab = 'itinerary' | 'secrets' | 'deals';
 
@@ -68,7 +80,13 @@ export default function App() {
     budget: 'Mid-range',
     tempo: 'Packed',
     preferences: '',
-    surpriseMe: false
+    surpriseMe: false,
+    locationMode: 'general',
+    specificCoordinates: undefined,
+    specificAddress: '',
+    maxTravelMinutes: 30,
+    dailyStartTime: '09:00',
+    dailyEndTime: '21:00'
   });
   const [itineraryResult, setItineraryResult] = useState<ItineraryResponse | null>(null);
   const [destinationImage, setDestinationImage] = useState<string | null>(null);
@@ -78,7 +96,11 @@ export default function App() {
     destination: '',
     focus: 'food',
     budgetAmount: 500,
-    currency: 'USD'
+    currency: 'USD',
+    locationMode: 'general',
+    specificCoordinates: undefined,
+    specificAddress: '',
+    maxTravelMinutes: 30
   });
   const [localSpotsResult, setLocalSpotsResult] = useState<LocalSpot[] | null>(null);
 
@@ -91,7 +113,16 @@ export default function App() {
     currency: 'USD',
     minRating: 4,
     maxDistance: '5km',
-    amenities: []
+    amenities: [],
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    days: 4,
+    nights: 3,
+    people: 1,
+    adults: 1,
+    children: 0,
+    childrenAges: [],
+    flightType: 'round'
   });
   const [dealsResult, setDealsResult] = useState<TravelSearchResponse | null>(null);
 
@@ -180,6 +211,79 @@ export default function App() {
     setToken(null);
   };
 
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const handleLocateMe = (tab: 'itinerary' | 'secrets') => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by this browser.");
+      return;
+    }
+    setLocating(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const coordsStr = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        let resolvedAddress = `GPS: ${coordsStr}`;
+        
+        if (tab === 'itinerary') {
+          setInputs(prev => ({
+            ...prev,
+            destination: prev.destination || "My Location",
+            specificCoordinates: { lat: latitude, lng: longitude },
+            specificAddress: resolvedAddress
+          }));
+        } else {
+          setLocalInputs(prev => ({
+            ...prev,
+            destination: prev.destination || "My Location",
+            specificCoordinates: { lat: latitude, lng: longitude },
+            specificAddress: resolvedAddress
+          }));
+        }
+        
+        // Try reverse geocoding if google.maps is loaded of maps library
+        try {
+          if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
+              if (status === 'OK' && results && results[0]) {
+                const address = results[0].formatted_address;
+                const cityComponent = results[0].address_components.find(c => c.types.includes('locality'));
+                const cityName = cityComponent ? cityComponent.long_name : "";
+                
+                if (tab === 'itinerary') {
+                  setInputs(prev => ({
+                    ...prev,
+                    destination: cityName || prev.destination || "My Location",
+                    specificAddress: address
+                  }));
+                } else {
+                  setLocalInputs(prev => ({
+                    ...prev,
+                    destination: cityName || prev.destination || "My Location",
+                    specificAddress: address
+                  }));
+                }
+              }
+            });
+          }
+        } catch (err) {
+          console.warn("Geocoder reverse geocoding not ready:", err);
+        } finally {
+          setLocating(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLocationError("Permission denied or GPS signal lost. Please enter address manually.");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
   const handleCopyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(sharedLink);
@@ -257,6 +361,35 @@ export default function App() {
     const newDestinations = [...dealsInputs.destinations];
     newDestinations[index] = value;
     setDealsInputs({ ...dealsInputs, destinations: newDestinations });
+  };
+
+  const updateDealsAdults = (val: number) => {
+    const adults = Math.max(1, val);
+    setDealsInputs({ ...dealsInputs, adults, people: adults + (dealsInputs.children || 0) });
+  };
+
+  const updateDealsChildren = (val: number) => {
+    const children = Math.max(0, val);
+    let childrenAges = [...(dealsInputs.childrenAges || [])];
+    const prevChildren = dealsInputs.children || 0;
+    if (children > prevChildren) {
+      childrenAges.push(10); // Default age
+    } else if (children < prevChildren) {
+      childrenAges = childrenAges.slice(0, children);
+    }
+    setDealsInputs({ ...dealsInputs, children, childrenAges, people: (dealsInputs.adults || 1) + children });
+  };
+
+  const updateDealsChildAge = (index: number, age: number) => {
+    const childrenAges = [...(dealsInputs.childrenAges || [])];
+    childrenAges[index] = age;
+    setDealsInputs({ ...dealsInputs, childrenAges });
+  };
+
+  const handleDealsDateChange = (field: 'startDate' | 'endDate', value: string) => {
+    const newInputs = { ...dealsInputs, [field]: value };
+    const { days, nights } = calculateDuration(newInputs.startDate || '', newInputs.endDate || '');
+    setDealsInputs({ ...newInputs, days, nights });
   };
 
   const updateAdults = (val: number) => {
@@ -461,6 +594,136 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Location Specificity Selector */}
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Location Focus Mode</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setInputs({ ...inputs, locationMode: 'general' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              (inputs.locationMode || 'general') === 'general'
+                                ? 'bg-stone-900 border-stone-900 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Compass className="w-4 h-4" />
+                            General Area
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInputs({ ...inputs, locationMode: 'specific' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              inputs.locationMode === 'specific'
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Navigation className="w-4 h-4" />
+                            Specific Point
+                          </button>
+                        </div>
+
+                        <AnimatePresence>
+                          {inputs.locationMode === 'specific' && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden space-y-4 pt-2 border-t border-stone-100"
+                            >
+                              <div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Starting Point / Address</label>
+                                  <span className="text-[10px] text-stone-500 italic block">Maps link or area name is ok</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <div className="relative flex-1">
+                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                                    <input 
+                                      type="text"
+                                      required={inputs.locationMode === 'specific'}
+                                      placeholder="e.g. Kyoto Station, Google Maps link, or map area name"
+                                      className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+                                      value={inputs.specificAddress || ''}
+                                      onChange={e => setInputs({...inputs, specificAddress: e.target.value})}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleLocateMe('itinerary')}
+                                    disabled={locating}
+                                    className="px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl flex items-center justify-center gap-1 text-xs font-semibold border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+                                    title="Detect my location with GPS"
+                                  >
+                                    <Locate className={`w-4 h-4 ${locating ? 'animate-spin text-emerald-600' : 'text-stone-500'}`} />
+                                    {locating ? 'Locating...' : 'Locate Me'}
+                                  </button>
+                                </div>
+                                {locationError && (
+                                  <p className="text-[10px] text-red-500 mt-1">{locationError}</p>
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between items-center mb-1">
+                                  <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Nearby Travel Limit (Minutes)</label>
+                                  <span className="text-sm font-semibold text-emerald-600 font-mono">{inputs.maxTravelMinutes || 30} mins</span>
+                                </div>
+                                <div className="space-y-3">
+                                  <input 
+                                    type="range"
+                                    min="5"
+                                    max="90"
+                                    step="5"
+                                    className="w-full h-1.5 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    value={inputs.maxTravelMinutes || 30}
+                                    onChange={e => setInputs({...inputs, maxTravelMinutes: parseInt(e.target.value)})}
+                                  />
+                                  <div className="flex justify-between items-center bg-stone-50 p-2 rounded-xl border border-stone-100 text-stone-500 text-[10px]">
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                      <span>5-15m (Walking)</span>
+                                    </div>
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                      <span>30-45m (Transit)</span>
+                                    </div>
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                      <span>60-90m (Driving)</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Interactive Map element */}
+                              {hasValidMapsKey && inputs.specificCoordinates && (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block">Location Map Marker</span>
+                                  <div className="h-44 w-full rounded-2xl overflow-hidden border border-stone-100 shadow-inner">
+                                    <Map
+                                      defaultCenter={inputs.specificCoordinates}
+                                      center={inputs.specificCoordinates}
+                                      defaultZoom={14}
+                                      zoom={14}
+                                      mapId="DEMO_MAP_ID"
+                                      internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+                                      style={{ width: '100%', height: '100%' }}
+                                      gestureHandling="cooperative"
+                                    >
+                                      <AdvancedMarker position={inputs.specificCoordinates}>
+                                        <Pin background="#10b981" glyphColor="#fff font-weight: bold" />
+                                      </AdvancedMarker>
+                                    </Map>
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Start Date</label>
@@ -485,6 +748,35 @@ export default function App() {
                               className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
                               value={inputs.endDate}
                               onChange={e => handleDateChange('endDate', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Daily Start Time</label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <input 
+                              type="time"
+                              required
+                              className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-medium"
+                              value={inputs.dailyStartTime || '09:00'}
+                              onChange={e => setInputs({...inputs, dailyStartTime: e.target.value})}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Daily End Time</label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <input 
+                              type="time"
+                              required
+                              className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-medium"
+                              value={inputs.dailyEndTime || '21:00'}
+                              onChange={e => setInputs({...inputs, dailyEndTime: e.target.value})}
                             />
                           </div>
                         </div>
@@ -737,6 +1029,136 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Location Specificity Selector */}
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Location Focus Mode</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setLocalInputs({ ...localInputs, locationMode: 'general' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              (localInputs.locationMode || 'general') === 'general'
+                                ? 'bg-stone-900 border-stone-900 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Compass className="w-4 h-4" />
+                            General Area
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLocalInputs({ ...localInputs, locationMode: 'specific' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              localInputs.locationMode === 'specific'
+                                ? 'bg-amber-600 border-amber-600 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Navigation className="w-4 h-4" />
+                            Specific Point
+                          </button>
+                        </div>
+
+                        <AnimatePresence>
+                          {localInputs.locationMode === 'specific' && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden space-y-4 pt-2 border-t border-stone-100"
+                            >
+                              <div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Starting Point / Address</label>
+                                  <span className="text-[10px] text-stone-500 italic block">Maps link or area name is ok</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <div className="relative flex-1">
+                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                                    <input 
+                                      type="text"
+                                      required={localInputs.locationMode === 'specific'}
+                                      placeholder="e.g. Lisbon Hotel, Google Maps link, or map area name"
+                                      className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+                                      value={localInputs.specificAddress || ''}
+                                      onChange={e => setLocalInputs({...localInputs, specificAddress: e.target.value})}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleLocateMe('secrets')}
+                                    disabled={locating}
+                                    className="px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl flex items-center justify-center gap-1 text-xs font-semibold border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+                                    title="Detect my location with GPS"
+                                  >
+                                    <Locate className={`w-4 h-4 ${locating ? 'animate-spin text-emerald-600' : 'text-stone-500'}`} />
+                                    {locating ? 'Locating...' : 'Locate Me'}
+                                  </button>
+                                </div>
+                                {locationError && (
+                                  <p className="text-[10px] text-red-500 mt-1">{locationError}</p>
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between items-center mb-1">
+                                  <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Nearby Travel Limit (Minutes)</label>
+                                  <span className="text-sm font-semibold text-emerald-600 font-mono">{localInputs.maxTravelMinutes || 30} mins</span>
+                                </div>
+                                <div className="space-y-3">
+                                  <input 
+                                    type="range"
+                                    min="5"
+                                    max="90"
+                                    step="5"
+                                    className="w-full h-1.5 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    value={localInputs.maxTravelMinutes || 30}
+                                    onChange={e => setLocalInputs({...localInputs, maxTravelMinutes: parseInt(e.target.value)})}
+                                  />
+                                  <div className="flex justify-between items-center bg-stone-50 p-2 rounded-xl border border-stone-100 text-stone-500 text-[10px]">
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                      <span>5-15m (Walking)</span>
+                                    </div>
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                      <span>30-45m (Transit)</span>
+                                    </div>
+                                    <div className="flex gap-1 items-center">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                      <span>60-90m (Driving)</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Interactive Map element */}
+                              {hasValidMapsKey && localInputs.specificCoordinates && (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400 block">Location Map Marker</span>
+                                  <div className="h-44 w-full rounded-2xl overflow-hidden border border-stone-100 shadow-inner">
+                                    <Map
+                                      defaultCenter={localInputs.specificCoordinates}
+                                      center={localInputs.specificCoordinates}
+                                      defaultZoom={14}
+                                      zoom={14}
+                                      mapId="DEMO_MAP_ID"
+                                      internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+                                      style={{ width: '100%', height: '100%' }}
+                                      gestureHandling="cooperative"
+                                    >
+                                      <AdvancedMarker position={localInputs.specificCoordinates}>
+                                        <Pin background="#10b981" glyphColor="#fff font-weight: bold" />
+                                      </AdvancedMarker>
+                                    </Map>
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
                       <div>
                         <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Focus Area</label>
                         <div className="grid grid-cols-3 gap-2">
@@ -851,6 +1273,37 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Flight Type (Round-trip vs One-way) Selector */}
+                      <div className="space-y-2">
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Flight Option</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDealsInputs({ ...dealsInputs, flightType: 'round' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              (dealsInputs.flightType || 'round') === 'round'
+                                ? 'bg-stone-900 border-stone-900 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Repeat className="w-3.5 h-3.5" />
+                            Round-trip
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDealsInputs({ ...dealsInputs, flightType: 'oneway' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              dealsInputs.flightType === 'oneway'
+                                ? 'bg-stone-900 border-stone-900 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            One-way
+                          </button>
+                        </div>
+                      </div>
+
                       <div>
                         <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Destinations</label>
                         <div className="space-y-3">
@@ -888,6 +1341,129 @@ export default function App() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Dates and Travelers Selection */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Start Date</label>
+                          <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <input 
+                              type="date"
+                              required
+                              className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+                              value={dealsInputs.startDate}
+                              onChange={e => handleDealsDateChange('startDate', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">End Date</label>
+                          <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <input 
+                              type="date"
+                              required
+                              className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-100 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm"
+                              value={dealsInputs.endDate}
+                              onChange={e => handleDealsDateChange('endDate', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Days / Nights</label>
+                          <div className="flex items-center gap-2 bg-stone-50 border border-stone-100 rounded-xl p-3 text-sm font-medium text-stone-600">
+                            <Clock className="w-4 h-4 text-stone-400" />
+                            <span>{dealsInputs.days} Days / {dealsInputs.nights} Nights</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Adults</label>
+                          <div className="flex items-center gap-2 bg-stone-50 border border-stone-100 rounded-xl p-1">
+                            <button 
+                              type="button"
+                              onClick={() => updateDealsAdults((dealsInputs.adults || 1) - 1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-200 transition-colors text-stone-600"
+                            >
+                              -
+                            </button>
+                            <span className="flex-1 text-center text-sm font-medium">{dealsInputs.adults || 1}</span>
+                            <button 
+                              type="button"
+                              onClick={() => updateDealsAdults((dealsInputs.adults || 1) + 1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-200 transition-colors text-stone-600"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Children</label>
+                          <div className="flex items-center gap-2 bg-stone-50 border border-stone-100 rounded-xl p-1">
+                            <button 
+                              type="button"
+                              onClick={() => updateDealsChildren((dealsInputs.children || 0) - 1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-200 transition-colors text-stone-600"
+                            >
+                              -
+                            </button>
+                            <span className="flex-1 text-center text-sm font-medium">{dealsInputs.children || 0}</span>
+                            <button 
+                              type="button"
+                              onClick={() => updateDealsChildren((dealsInputs.children || 0) + 1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-200 transition-colors text-stone-600"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Total</label>
+                          <div className="relative">
+                            <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <input 
+                              type="number"
+                              disabled
+                              className="w-full pl-10 pr-4 py-3 bg-stone-100 border border-stone-100 rounded-xl text-stone-500 cursor-not-allowed"
+                              value={dealsInputs.people || 1}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <AnimatePresence>
+                        {(dealsInputs.children || 0) > 0 && dealsInputs.childrenAges && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-3 overflow-hidden"
+                          >
+                            <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Children's Ages</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {dealsInputs.childrenAges.map((age, idx) => (
+                                <div key={idx} className="space-y-1">
+                                  <span className="text-[10px] text-stone-400 block">Child {idx + 1}</span>
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="17"
+                                    className="w-full px-2 py-2 bg-stone-50 border border-stone-100 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                                    value={age}
+                                    onChange={e => updateDealsChildAge(idx, parseInt(e.target.value) || 0)}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       <div>
                         <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 mb-2 block">Budget & Currency</label>
@@ -1120,7 +1696,7 @@ export default function App() {
                     <div className="absolute top-0 right-0 p-8 opacity-10">
                       <Plane className="w-32 h-32 rotate-45" />
                     </div>
-                    <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="relative z-10 grid grid-cols-1 md:grid-cols-4 gap-8">
                       <div>
                         <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 block mb-2">Destination</span>
                         <div className="flex items-center gap-2">
@@ -1133,6 +1709,13 @@ export default function App() {
                         <div className="text-xl font-serif">
                           {new Date(inputs.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(inputs.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           <span className="text-sm text-stone-400 block mt-1 font-sans font-normal uppercase tracking-widest">{inputs.days} Days / {inputs.nights} Nights</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 block mb-2">Daily Schedule Hours</span>
+                        <div className="text-xl font-serif">
+                          {inputs.dailyStartTime || '09:00'} - {inputs.dailyEndTime || '21:00'}
+                          <span className="text-sm text-stone-400 block mt-1 font-sans font-normal uppercase tracking-widest">Active Time Limits</span>
                         </div>
                       </div>
                       <div>
@@ -1210,6 +1793,12 @@ export default function App() {
                                     <div className="flex items-start gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded-lg border border-blue-100">
                                       <Cloud className="w-3 h-3 mt-0.5 shrink-0" />
                                       <span>{item.weatherNote}</span>
+                                    </div>
+                                  )}
+                                  {item.travelTimeEstimate && (
+                                    <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                                      <Clock className="w-3 h-3 mt-0.5 shrink-0" />
+                                      <span><span className="font-bold">Proximity:</span> {item.travelTimeEstimate} from starting point</span>
                                     </div>
                                   )}
                                   {item.indoorAlternative && (
@@ -1419,7 +2008,7 @@ export default function App() {
                           </div>
                         )}
                         <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
+                          <div className="flex flex-wrap items-center gap-3 mb-2">
                             <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-widest ${
                               spot.category === 'food' ? 'bg-emerald-50 text-emerald-700' :
                               spot.category === 'culture' ? 'bg-amber-50 text-amber-700' :
@@ -1431,6 +2020,12 @@ export default function App() {
                               <MapPin className="w-3 h-3" />
                               {spot.location}
                             </div>
+                            {spot.travelTimeEstimate && (
+                              <div className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100 font-medium">
+                                <Clock className="w-3 h-3 text-amber-500 animate-pulse" />
+                                <span>{spot.travelTimeEstimate} away</span>
+                              </div>
+                            )}
                           </div>
                           <h3 className="text-2xl font-serif mb-4 group-hover:text-emerald-700 transition-colors">{spot.name}</h3>
                           <p className="text-stone-600 leading-relaxed mb-6 italic">"{spot.whySpecial}"</p>
@@ -1459,6 +2054,39 @@ export default function App() {
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-12 pb-12"
                 >
+                  {/* Trip Summary Card */}
+                  <div className="bg-stone-900 text-white rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                      <Tickets className="w-32 h-32 rotate-12 animate-pulse" />
+                    </div>
+                    <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 block mb-2">Destination{dealsInputs.destinations.length > 1 ? 's' : ''}</span>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-5 h-5 text-emerald-500" />
+                          <div className="text-xl font-serif">{dealsInputs.destinations.join(" → ")}</div>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 block mb-2">Dates & Duration</span>
+                        <div className="text-xl font-serif">
+                          {dealsInputs.startDate ? new Date(dealsInputs.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''} - {dealsInputs.endDate ? new Date(dealsInputs.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                          <span className="text-sm text-stone-400 block mt-1 font-sans font-normal uppercase tracking-widest">{dealsInputs.days} Days / {dealsInputs.nights} Nights</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-stone-400 block mb-2">Budget & Group</span>
+                        <div className="text-xl font-serif">
+                          {dealsInputs.budgetAmount.toLocaleString()} {dealsInputs.currency}
+                          <span className="text-sm text-stone-400 block mt-1 font-sans font-normal uppercase tracking-widest">
+                            {dealsInputs.adults || 1} Adult{(dealsInputs.adults || 1) > 1 ? 's' : ''}
+                            {(dealsInputs.children || 0) > 0 ? `, ${dealsInputs.children} Child${(dealsInputs.children || 0) > 1 ? 'ren' : ''}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Flights Section */}
                   <section>
                     <h3 className="text-2xl font-serif mb-6 flex items-center gap-3">
@@ -1473,7 +2101,12 @@ export default function App() {
                               <Tickets className="w-6 h-6 text-stone-400" />
                             </div>
                             <div>
-                              <div className="font-bold text-stone-900">{flight.airline}</div>
+                              <div className="flex items-center gap-2">
+                                <div className="font-bold text-stone-900">{flight.airline}</div>
+                                <span className="px-2 py-0.5 rounded bg-stone-100 text-[9px] uppercase font-bold text-stone-500 border border-stone-200">
+                                  {dealsInputs.flightType === 'oneway' ? 'One-way' : 'Round-trip'}
+                                </span>
+                              </div>
                               <div className="text-xs text-stone-500 uppercase tracking-widest font-semibold">{flight.duration}</div>
                             </div>
                           </div>

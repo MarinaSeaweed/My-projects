@@ -8,6 +8,7 @@ export interface ItineraryItem {
   hiddenGemNote: string;
   weatherNote?: string;
   indoorAlternative?: string;
+  travelTimeEstimate?: string; // e.g. "12 min walk" or "8 min drive"
 }
 
 export interface LogisticsSummary {
@@ -29,6 +30,7 @@ export interface LocalSpot {
   tip: string;
   location: string;
   imageUrl?: string;
+  travelTimeEstimate?: string; // e.g. "15 min drive" or "10 min walk"
 }
 
 export interface LocalSpotsInputs {
@@ -36,6 +38,10 @@ export interface LocalSpotsInputs {
   focus: 'food' | 'culture' | 'nature';
   budgetAmount: number;
   currency: string;
+  locationMode?: 'general' | 'specific';
+  specificCoordinates?: { lat: number; lng: number };
+  specificAddress?: string;
+  maxTravelMinutes?: number;
 }
 
 export interface Hotel {
@@ -76,6 +82,15 @@ export interface TravelSearchInputs {
   minRating?: number;
   maxDistance?: string;
   amenities?: string[];
+  startDate?: string;
+  endDate?: string;
+  days?: number;
+  nights?: number;
+  people?: number;
+  adults?: number;
+  children?: number;
+  childrenAges?: number[];
+  flightType?: 'round' | 'oneway';
 }
 
 export interface TravelInputs {
@@ -95,4 +110,10 @@ export interface TravelInputs {
   tempo: string;
   preferences: string;
   surpriseMe: boolean;
+  locationMode?: 'general' | 'specific';
+  specificCoordinates?: { lat: number; lng: number };
+  specificAddress?: string;
+  maxTravelMinutes?: number;
+  dailyStartTime?: string;
+  dailyEndTime?: string;
 }
