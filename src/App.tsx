@@ -1594,33 +1594,7 @@ export default function App() {
           {/* Result Display Column */}
           <div className="lg:col-span-8 print-full-width">
             <AnimatePresence mode="wait">
-              {/* Initial State */}
-              {((activeTab === 'itinerary' && !itineraryResult) || (activeTab === 'secrets' && !localSpotsResult) || (activeTab === 'deals' && !dealsResult)) && !loading && !error && (
-                <motion.div 
-                  key="empty-state"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="h-full flex flex-col items-center justify-center text-center p-12 bg-white/50 rounded-3xl border-2 border-dashed border-stone-200"
-                >
-                  <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
-                    {activeTab === 'itinerary' ? <Plane className="w-10 h-10 text-emerald-600" /> : activeTab === 'secrets' ? <Gem className="w-10 h-10 text-amber-500" /> : <Tickets className="w-10 h-10 text-blue-500" />}
-                  </div>
-                  <h3 className="text-2xl font-serif mb-2">
-                    {activeTab === 'itinerary' ? 'Ready for your next adventure?' : activeTab === 'secrets' ? 'Discover the soul of the city' : 'Find your perfect stay & flight'}
-                  </h3>
-                  <p className="text-stone-500 max-w-md">
-                    {activeTab === 'itinerary' 
-                      ? 'Fill out the form to generate a personalized itinerary tailored to your travel style.' 
-                      : activeTab === 'secrets'
-                      ? 'Find the places locals love. Authentic, non-touristy spots for a deeper experience.'
-                      : 'We scan the web for the best flight and hotel deals matching your budget and destination.'}
-                  </p>
-                </motion.div>
-              )}
-
-              {/* Loading State */}
-              {loading && (
+              {loading ? (
                 <motion.div 
                   key="loading-state"
                   initial={{ opacity: 0 }}
@@ -1652,10 +1626,7 @@ export default function App() {
                     />
                   </div>
                 </motion.div>
-              )}
-
-              {/* Error State */}
-              {error && (
+              ) : error ? (
                 <motion.div 
                   key="error-state"
                   initial={{ opacity: 0 }}
@@ -1665,10 +1636,29 @@ export default function App() {
                   <Info className="w-5 h-5" />
                   {error}
                 </motion.div>
-              )}
-
-              {/* Itinerary Result */}
-              {activeTab === 'itinerary' && itineraryResult && !loading && (
+              ) : ((activeTab === 'itinerary' && !itineraryResult) || (activeTab === 'secrets' && !localSpotsResult) || (activeTab === 'deals' && !dealsResult)) ? (
+                <motion.div 
+                  key="empty-state"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="h-full flex flex-col items-center justify-center text-center p-12 bg-white/50 rounded-3xl border-2 border-dashed border-stone-200"
+                >
+                  <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
+                    {activeTab === 'itinerary' ? <Plane className="w-10 h-10 text-emerald-600" /> : activeTab === 'secrets' ? <Gem className="w-10 h-10 text-amber-500" /> : <Tickets className="w-10 h-10 text-blue-500" />}
+                  </div>
+                  <h3 className="text-2xl font-serif mb-2">
+                    {activeTab === 'itinerary' ? 'Ready for your next adventure?' : activeTab === 'secrets' ? 'Discover the soul of the city' : 'Find your perfect stay & flight'}
+                  </h3>
+                  <p className="text-stone-500 max-w-md">
+                    {activeTab === 'itinerary' 
+                      ? 'Fill out the form to generate a personalized itinerary tailored to your travel style.' 
+                      : activeTab === 'secrets'
+                      ? 'Find the places locals love. Authentic, non-touristy spots for a deeper experience.'
+                      : 'We scan the web for the best flight and hotel deals matching your budget and destination.'}
+                  </p>
+                </motion.div>
+              ) : activeTab === 'itinerary' && itineraryResult ? (
                 <motion.div 
                   key="itinerary-result"
                   initial={{ opacity: 0, y: 20 }}
@@ -1978,10 +1968,7 @@ export default function App() {
                     </div>
                   </div>
                 </motion.div>
-              )}
-
-              {/* Local Spots Result */}
-              {activeTab === 'secrets' && localSpotsResult && !loading && (
+              ) : activeTab === 'secrets' && localSpotsResult ? (
                 <motion.div 
                   key="secrets-result"
                   initial={{ opacity: 0, y: 20 }}
@@ -2044,10 +2031,7 @@ export default function App() {
                     </motion.div>
                   ))}
                 </motion.div>
-              )}
-
-              {/* Deals Result */}
-              {activeTab === 'deals' && dealsResult && !loading && (
+              ) : activeTab === 'deals' && dealsResult ? (
                 <motion.div 
                   key="deals-result"
                   initial={{ opacity: 0, y: 20 }}
@@ -2215,7 +2199,7 @@ export default function App() {
                     </div>
                   </section>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
           </div>
         </div>
