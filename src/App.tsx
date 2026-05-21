@@ -39,7 +39,8 @@ import {
   Repeat
 } from 'lucide-react';
 import { generateItinerary, getLocalSpots, generateDestinationImage, searchTravelDeals } from './services/geminiService';
-import { ItineraryResponse, TravelInputs, LocalSpot, LocalSpotsInputs, TravelSearchResponse, TravelSearchInputs } from './types';
+import { ItineraryResponse, TravelInputs, LocalSpot, LocalSpotsInputs, TravelSearchResponse, TravelSearchInputs, Expense } from './types';
+import BudgetTracker from './components/BudgetTracker';
 import { 
   initAuth, 
   googleSignIn, 
@@ -58,7 +59,7 @@ const GOOGLE_MAPS_KEY =
   '';
 const hasValidMapsKey = Boolean(GOOGLE_MAPS_KEY) && GOOGLE_MAPS_KEY !== 'YOUR_API_KEY';
 
-type Tab = 'itinerary' | 'secrets' | 'deals';
+type Tab = 'itinerary' | 'secrets' | 'deals' | 'budget';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('itinerary');
@@ -80,6 +81,7 @@ export default function App() {
     budget: 'Mid-range',
     tempo: 'Packed',
     preferences: '',
+    experienceType: 'popular',
     surpriseMe: false,
     locationMode: 'general',
     specificCoordinates: undefined,
@@ -125,6 +127,9 @@ export default function App() {
     flightType: 'round'
   });
   const [dealsResult, setDealsResult] = useState<TravelSearchResponse | null>(null);
+
+  // Budget State
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
@@ -554,6 +559,12 @@ export default function App() {
             >
               Hotels & Flights
             </button>
+            <button 
+              onClick={() => setActiveTab('budget')}
+              className={`px-6 py-2 rounded-xl text-sm font-medium transition-all ${activeTab === 'budget' ? 'bg-stone-900 text-white shadow-md' : 'text-stone-500 hover:text-stone-900'}`}
+            >
+              Budget Tracker
+            </button>
           </div>
         </div>
 
@@ -952,6 +963,36 @@ export default function App() {
                             <option>Relaxed</option>
                             <option>Packed</option>
                           </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-xs uppercase tracking-widest font-semibold text-stone-400 block">Experience Type</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setInputs({ ...inputs, experienceType: 'popular' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              (inputs.experienceType || 'popular') === 'popular'
+                                ? 'bg-stone-900 border-stone-900 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            Popular
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInputs({ ...inputs, experienceType: 'off-the-beaten-path' })}
+                            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs uppercase font-bold transition-all cursor-pointer ${
+                              inputs.experienceType === 'off-the-beaten-path'
+                                ? 'bg-amber-600 border-amber-600 text-white shadow-md'
+                                : 'bg-stone-50 border-stone-100 text-stone-500 hover:border-stone-200'
+                            }`}
+                          >
+                            <Compass className="w-4 h-4" />
+                            Off-beaten-path
+                          </button>
                         </div>
                       </div>
 
@@ -1734,12 +1775,23 @@ export default function App() {
                       </div>
                       <p className="text-sm text-stone-600 leading-relaxed">{itineraryResult.logistics.accommodationAreas}</p>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-sm shadow-stone-200/50 border border-stone-100">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm shadow-stone-200/50 border border-stone-100 col-span-2">
                       <div className="flex items-center gap-3 mb-3 text-emerald-600">
                         <Cloud className="w-5 h-5" />
-                        <span className="text-xs uppercase tracking-widest font-bold">Weather</span>
+                        <span className="text-xs uppercase tracking-widest font-bold">Weather Summary</span>
                       </div>
-                      <p className="text-sm text-stone-600 leading-relaxed">{itineraryResult.logistics.weatherSummary}</p>
+                      <p className="text-sm text-stone-600 leading-relaxed mb-4">{itineraryResult.logistics.weatherSummary}</p>
+                      
+                      <div className="grid grid-cols-5 gap-2">
+                        {itineraryResult.forecast.map((day, idx) => (
+                          <div key={idx} className="bg-stone-50 rounded-xl p-2 text-center border border-stone-100">
+                            <div className="text-[10px] font-bold text-stone-500 uppercase">{day.day}</div>
+                            <div className="text-sm font-bold text-stone-900">{day.temperature}</div>
+                            <div className="text-[9px] text-stone-400">{day.precipitationProbability} Rain</div>
+                            <div className="text-[9px] text-stone-400">{day.windConditions} Wind</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div className="bg-white p-6 rounded-2xl shadow-sm shadow-stone-200/50 border border-stone-100">
                       <div className="flex items-center gap-3 mb-3 text-emerald-600">
@@ -1760,6 +1812,7 @@ export default function App() {
                             <th className="px-6 py-4 text-xs uppercase tracking-widest font-bold text-stone-400">Time</th>
                             <th className="px-6 py-4 text-xs uppercase tracking-widest font-bold text-stone-400">Activity</th>
                             <th className="px-6 py-4 text-xs uppercase tracking-widest font-bold text-stone-400">Location</th>
+                            <th className="px-6 py-4 text-xs uppercase tracking-widest font-bold text-stone-400">Hidden Gem Tip</th>
                             <th className="px-6 py-4 text-xs uppercase tracking-widest font-bold text-stone-400">Cost</th>
                           </tr>
                         </thead>
@@ -1775,10 +1828,6 @@ export default function App() {
                               <td className="px-6 py-4 align-top">
                                 <div className="font-medium text-stone-900">{item.activity}</div>
                                 <div className="mt-2 space-y-2">
-                                  <div className="flex items-start gap-2 text-xs text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                                    <Gem className="w-3 h-3 mt-0.5 shrink-0" />
-                                    <span>{item.hiddenGemNote}</span>
-                                  </div>
                                   {item.weatherNote && (
                                     <div className="flex items-start gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded-lg border border-blue-100">
                                       <Cloud className="w-3 h-3 mt-0.5 shrink-0" />
@@ -1803,6 +1852,25 @@ export default function App() {
                                 <div className="flex items-center gap-1 text-sm text-stone-600">
                                   <MapPin className="w-3 h-3" />
                                   {item.location}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 align-top">
+                                <div className={`flex items-start gap-2 text-xs p-2 rounded-lg border ${
+                                  (inputs.experienceType || 'popular') === 'popular'
+                                    ? 'text-amber-800 bg-amber-50/70 border-amber-100/80'
+                                    : 'text-emerald-800 bg-emerald-50/70 border-emerald-100/80'
+                                }`}>
+                                  {(inputs.experienceType || 'popular') === 'popular' ? (
+                                    <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                                  ) : (
+                                    <Gem className="w-3 h-3 mt-0.5 shrink-0" />
+                                  )}
+                                  <span>
+                                    <strong className="font-semibold block mb-0.5 font-sans uppercase tracking-wider text-[10px]">
+                                      {(inputs.experienceType || 'popular') === 'popular' ? 'Insider & Historical Context' : 'Hidden Gem Aspect'}
+                                    </strong>
+                                    {item.hiddenGemNote}
+                                  </span>
                                 </div>
                               </td>
                               <td className="px-6 py-4 align-top text-sm font-medium text-stone-900 whitespace-nowrap">{item.estimatedCost}</td>
@@ -2079,14 +2147,19 @@ export default function App() {
                     </h3>
                     <div className="grid grid-cols-1 gap-4">
                       {dealsResult.flights.map((flight, idx) => (
-                        <div key={idx} className="bg-white rounded-2xl p-6 shadow-sm border border-stone-100 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow">
+                        <div 
+                          key={idx} 
+                          onClick={() => window.open(flight.bookingUrl, '_blank')}
+                          className="bg-white rounded-2xl p-6 shadow-sm border border-stone-100 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-lg hover:border-emerald-400 hover:scale-[1.01] transition-all cursor-pointer group relative"
+                          title="Click to instantly go to booking page"
+                        >
                           <div className="flex items-center gap-4 w-full md:w-auto">
-                            <div className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center shrink-0">
-                              <Tickets className="w-6 h-6 text-stone-400" />
+                            <div className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center shrink-0 group-hover:bg-emerald-50 transition-colors">
+                              <Tickets className="w-6 h-6 text-stone-400 group-hover:text-emerald-600 transition-colors" />
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <div className="font-bold text-stone-900">{flight.airline}</div>
+                                <div className="font-bold text-stone-900 group-hover:text-emerald-700 transition-colors">{flight.airline}</div>
                                 <span className="px-2 py-0.5 rounded bg-stone-100 text-[9px] uppercase font-bold text-stone-500 border border-stone-200">
                                   {dealsInputs.flightType === 'oneway' ? 'One-way' : 'Round-trip'}
                                 </span>
@@ -2102,7 +2175,7 @@ export default function App() {
                             </div>
                             <div className="flex-1 max-w-[100px] relative flex items-center justify-center">
                               <div className="w-full h-[1px] bg-stone-200 border-t border-dashed border-stone-300"></div>
-                              <ArrowRight className="w-4 h-4 text-stone-300 absolute" />
+                              <ArrowRight className="w-4 h-4 text-stone-300 absolute group-hover:translate-x-1 transition-transform" />
                             </div>
                             <div className="text-center">
                               <div className="text-lg font-mono font-bold">{flight.arrivalTime}</div>
@@ -2112,14 +2185,15 @@ export default function App() {
 
                           <div className="text-right w-full md:w-auto flex md:flex-col items-center md:items-end justify-between md:justify-center gap-4">
                             <div className="text-2xl font-serif text-emerald-700">{flight.price}</div>
-                            <a 
-                              href={flight.bookingUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="px-6 py-2 bg-stone-900 text-white text-sm rounded-xl hover:bg-stone-800 transition-colors flex items-center gap-2"
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(flight.bookingUrl, '_blank');
+                              }}
+                              className="px-6 py-2 bg-stone-900 text-white text-sm rounded-xl group-hover:bg-emerald-600 transition-colors flex items-center gap-2 cursor-pointer border-none outline-none font-medium"
                             >
                               Book <ExternalLink className="w-3 h-3" />
-                            </a>
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -2198,6 +2272,22 @@ export default function App() {
                       ))}
                     </div>
                   </section>
+                </motion.div>
+              ) : activeTab === 'budget' ? (
+                <motion.div 
+                  key="budget-tracker"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white rounded-3xl shadow-xl shadow-stone-200/50 p-8 border border-stone-100"
+                >
+                  <BudgetTracker 
+                    totalBudget={inputs.budgetAmount} 
+                    expenses={expenses} 
+                    setExpenses={setExpenses} 
+                    currency={inputs.currency}
+                  />
                 </motion.div>
               ) : null}
             </AnimatePresence>

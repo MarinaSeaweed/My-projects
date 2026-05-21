@@ -254,6 +254,11 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     Traveler Profile: ${inputs.profile}
     Tempo: ${inputs.tempo}
     Preferences: ${inputs.preferences}
+    Experience Type Preference: ${inputs.experienceType || "popular"} (either 'popular' for iconic attractions, or 'off-the-beaten-path' for lesser-known spots).
+    
+    CRITICAL EXPERIENCE TYPE INSTRUCTIONS:
+    - If Experience Type is 'off-the-beaten-path': ensure the activities suggested are lesser-known, non-touristy, hidden spots. The 'hiddenGemNote' field for each activity must describe why this spot is a special hidden secret or how to see it like a local.
+    - If Experience Type is 'popular': ensure the activities suggested are the famous, iconic landmarks and attractions. The 'hiddenGemNote' field must instead provide interesting tips, historical facts, or fascinating context for enjoying these well-known sites.
     ${surpriseMePrompt}
     ${locationGuidance}
     ${dailyTimingGuidance}
@@ -264,6 +269,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     1. Use the googleSearch tool to fetch the real-time weather forecast for ${destinationsStr} for the travel period (${inputs.startDate} to ${inputs.endDate}).
     2. Suggest specific transportation options or getting-around methods (public transit, taxi, walking) within ${destinationsStr}.
     3. All estimated costs MUST be displayed in ${inputs.currency}.
+    4. Provide a 5-day weather forecast in an array named 'forecast', with each entry containing 'day', 'temperature', 'precipitationProbability', and 'windConditions'.
     
     Based on the weather forecast:
     1. Subtly adjust activity suggestions (e.g., if rain is expected, suggest indoor activities).
@@ -271,7 +277,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
     3. Provide an 'indoorAlternative' for any outdoor plans in case of bad weather.
     4. Include a brief 'weatherSummary' in the logistics section.
 
-    Provide a detailed daily schedule and a summary of logistics. 
+    Provide a detailed daily schedule, a 5-day weather forecast, and a summary of logistics. 
     The estimated costs should be in ${inputs.currency}.
   `;
 
@@ -295,7 +301,7 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
                 activity: { type: Type.STRING },
                 location: { type: Type.STRING },
                 estimatedCost: { type: Type.STRING },
-                hiddenGemNote: { type: Type.STRING },
+                hiddenGemNote: { type: Type.STRING, description: "A note tailored to Experience Type: if 'off-the-beaten-path', highlight the lesser-known/local secrete aspect. If 'popular', provide historical context or unique tips for the tourist attraction." },
                 weatherNote: { type: Type.STRING, description: "Attire advice or weather-specific tip" },
                 indoorAlternative: { type: Type.STRING, description: "Alternative activity if weather is bad" },
                 travelTimeEstimate: { type: Type.STRING, description: "Estimated walking or transit time from user starting position, e.g. '10 min walk' or '15 min drive'" },
@@ -313,8 +319,21 @@ export async function generateItinerary(inputs: TravelInputs): Promise<Itinerary
             },
             required: ["transportMethods", "accommodationAreas", "generalTips", "weatherSummary"],
           },
+          forecast: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                day: { type: Type.STRING },
+                temperature: { type: Type.STRING },
+                precipitationProbability: { type: Type.STRING },
+                windConditions: { type: Type.STRING },
+              },
+              required: ["day", "temperature", "precipitationProbability", "windConditions"],
+            },
+          },
         },
-        required: ["itinerary", "logistics"],
+        required: ["itinerary", "logistics", "forecast"],
       },
     },
   });

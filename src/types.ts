@@ -1,4 +1,19 @@
 
+export interface Expense {
+  id: string;
+  category: 'flights' | 'accommodation' | 'activities' | 'food' | 'other';
+  amount: number;
+  description: string;
+  date: string;
+}
+
+export interface ForecastDay {
+  day: string;
+  temperature: string;
+  precipitationProbability: string;
+  windConditions: string;
+}
+
 export interface ItineraryItem {
   day: number;
   time: string;
@@ -21,6 +36,7 @@ export interface LogisticsSummary {
 export interface ItineraryResponse {
   itinerary: ItineraryItem[];
   logistics: LogisticsSummary;
+  forecast: ForecastDay[];
 }
 
 export interface LocalSpot {
@@ -109,6 +125,7 @@ export interface TravelInputs {
   budget: string; // Keep for backward compatibility or general category
   tempo: string;
   preferences: string;
+  experienceType?: 'popular' | 'off-the-beaten-path';
   surpriseMe: boolean;
   locationMode?: 'general' | 'specific';
   specificCoordinates?: { lat: number; lng: number };
